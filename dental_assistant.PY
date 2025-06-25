@@ -1,53 +1,49 @@
 import streamlit as st
-import openai
+from pathlib import Path
+from openai import OpenAI
 import smtplib
 from email.message import EmailMessage
 
-# 1️⃣ Configurazione pagina Streamlit
+# --- Config pagina ---
 st.set_page_config(page_title="Assistente AI - Studio Dentistico Pincopallino")
 
-# 2️⃣ Interfaccia utente
 st.title("🦷 Chatbot – Studio Dentistico Pincopallino")
 user_input = st.text_input("Fai una domanda o chiedi un appuntamento:")
 
-# 3️⃣ Chiavi segrete (definite in Streamlit ➜ Secrets)
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-OWNER_EMAIL    = st.secrets["OWNER_EMAIL"]
-SMTP_PASS      = st.secrets["SMTP_PASS"]
+# --- Client OpenAI ---
+client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
 
-# 4️⃣ Prompt base
-PROMPT_BASE = Path("prompt.txt").read_text()
+# --- Prompt base ---
+PROMPT_BASE = Path('prompt.txt').read_text()
 
-def ai_reply(message: str) -> str:
-    """Interroga GPT-4/3.5 e restituisce la risposta."""
-    completion = openai.ChatCompletion.create(
-        model="gpt-4o",               # o gpt-3.5-turbo-1106 se vuoi risparmiare
-        temperature=0.7,
+def ai_reply(msg: str) -> str:
+    completion = client.chat.completions.create(
+        model='gpt-4o',
         messages=[
-            {"role": "system", "content": PROMPT_BASE},
-            {"role": "user", "content": message}
+            {'role': 'system', 'content': PROMPT_BASE},
+            {'role': 'user',   'content': msg}
         ],
+        temperature=0.7
     )
     return completion.choices[0].message.content.strip()
 
 def send_email(question: str, answer: str) -> None:
-    """Invia i dettagli del lead al dentista via Gmail."""
+    owner = st.secrets['OWNER_EMAIL']
+    smtp_pass = st.secrets['SMTP_PASS']
     msg = EmailMessage()
-    msg["Subject"] = "Nuovo contatto dal chatbot"
-    msg["From"] = OWNER_EMAIL
-    msg["To"] = OWNER_EMAIL
-    msg.set_content(f"DOMANDA UTENTE:\n{question}\n\nRISPOSTA AI:\n{answer}")
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(OWNER_EMAIL, SMTP_PASS)
+    msg['Subject'] = 'Nuovo contatto dal chatbot'
+    msg['From'] = owner
+    msg['To'] = owner
+    msg.set_content(f'DOMANDA UTENTE:\n{question}\n\nRISPOSTA AI:\n{answer}')
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(owner, smtp_pass)
         smtp.send_message(msg)
 
 if user_input:
-    risposta = ai_reply(user_input)
-    st.markdown("**Risposta del chatbot:**")
-    st.write(risposta)
+    answer = ai_reply(user_input)
+    st.markdown('**Risposta del chatbot:**')
+    st.write(answer)
 
-    # invia mail se l’utente menziona contatti/appuntamento
-    trigger = any(x in user_input.lower() for x in ["email", "telefono", "appuntamento"])
-    if trigger:
-        send_email(user_input, risposta)
-        st.success("📩 Dati inviati allo studio. Grazie!")
+    if any(k in user_input.lower() for k in ['email', 'telefono', 'appuntamento', 'contatto']):
+        send_email(user_input, answer)
+        st.success('📩 I tuoi dati sono stati inviati allo studio. Grazie!')
